@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { adminGraphQL } from "@/lib/shopify";
-import { checkAuth } from "@/lib/auth";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +30,9 @@ function build(type, id, title, desc) {
 }
 
 export async function POST(request) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = getSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "Not connected to a store." }, { status: 401 });
   }
   let body;
   try {
@@ -48,13 +49,11 @@ export async function POST(request) {
     return NextResponse.json({ error: `Unknown type: ${type}` }, { status: 400 });
   }
   try {
-    const data = await adminGraphQL(m.query, m.variables);
+    const data = await adminGraphQL(session.shop, session.token, m.query, m.variables);
     const ue = data[m.path] && data[m.path].userErrors;
     if (ue && ue.length) {
       return NextResponse.json({ error: ue.map((x) => x.message).join("; ") }, { status: 422 });
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
-  }
-}
+    return Nex

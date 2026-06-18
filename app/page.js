@@ -11,6 +11,13 @@ const TABS = [
   { key: "articles", label: "Blog posts" },
 ];
 
+const ERROR_MESSAGES = {
+  bad_hmac: "Connection failed security verification. Please try again.",
+  bad_state: "Connection expired or was tampered with. Please try again.",
+  token_exchange: "Shopify rejected the connection. Check the app's API keys.",
+  invalid_callback: "Invalid response from Shopify. Please try again.",
+};
+
 function Logo() {
   return (
     <svg viewBox="5750 -2679.9 12500 4447.2" role="img" aria-label="boko">
@@ -19,6 +26,15 @@ function Logo() {
       <path fill="#BFFC00" d="M13174.5,1181.1c-14.8,0-29.6-0.7-44.1-2.1l1927.5-1923.7l-415.3-414.4L12715.2,764.6c-1.4-14.5-2.1-29.2-2.1-44v-1884.1h-587.3V720.6c0,578.1,469.4,1046.7,1048.6,1046.7H15062v-586.2H13174.5L13174.5,1181.1z" />
       <path fill="#111213" d="M17662.7,302c0-485.6-394.3-879.3-880.8-879.3s-880.9,393.6-880.9,879.3s394.5,879.3,880.9,879.3C17268.4,1181.3,17662.7,787.5,17662.7,302z M18250,302c0,809.3-657.3,1465.3-1468.1,1465.3c-810.9,0-1468.1-656.1-1468.1-1465.3c0-809.3,657.3-1465.3,1468.1-1465.3C17592.7-1163.5,18250-507.3,18250,302z" />
     </svg>
+  );
+}
+
+function Topbar() {
+  return (
+    <div className="topbar">
+      <div className="brand"><div className="logo"><Logo /></div></div>
+      <span className="navlabel">SEO Meta Studio</span>
+    </div>
   );
 }
 
@@ -42,15 +58,13 @@ export default function Page() {
   const [data, setData] = useState({ products: [], collections: [], pages: [], articles: [] });
   const [store, setStore] = useState({ name: "", domain: "" });
   const [activeTab, setActiveTab] = useState("products");
+  const [connected, setConnected] = useState(null); // null = checking
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [busyAll, setBusyAll] = useState(false);
-
-  // password gate
-  const [needPw, setNeedPw] = useState(false);
-  const [pw, setPw] = useState("");
-  const [pwInput, setPwInput] = useState("");
+  const [shopInput, setShopInput] = useState("");
+  const [authError, setAuthError] = useState("");
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -58,26 +72,13 @@ export default function Page() {
     window.__t = window.setTimeout(() => setToast(""), 3200);
   }, []);
 
-  const api = useCallback(
-    (path, opts = {}) =>
-      fetch(path, {
-        ...opts,
-        headers: {
-          "Content-Type": "application/json",
-          ...(opts.headers || {}),
-          ...(pw ? { "x-app-password": pw } : {}),
-        },
-      }),
-    [pw]
-  );
-
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
-      const res = await api("/api/items");
+      const res = await fetch("/api/items");
       if (res.status === 401) {
-        setNeedPw(true);
+        setConnected(false);
         setLoading(false);
         return;
       }
@@ -92,18 +93,28 @@ export default function Page() {
         articles: decorate(d.articles),
       });
       setStore(d.store || { name: "", domain: "" });
-      setNeedPw(false);
+      setConnected(true);
     } catch (e) {
+      setConnected(true);
       setLoadError(e.message || String(e));
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, []);
 
   useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const err = q.get("error");
+    if (err) setAuthError(ERROR_MESSAGES[err] || "Connection failed. Please try again.");
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const connect = useCallback(() => {
+    const shop = shopInput.trim();
+    if (!shop) return;
+    window.location.href = "/api/auth?shop=" + encodeURIComponent(shop);
+  }, [shopInput]);
 
   const patchItem = useCallback((type, id, patch) => {
     setData((prev) => ({
@@ -118,8 +129,9 @@ export default function Page() {
     async (item) => {
       patchItem(item.type, item.id, { status: "working", error: "" });
       try {
-        const res = await api("/api/generate", {
+        const res = await fetch("/api/generate", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: item.type,
             title: item.title,
@@ -142,7 +154,7 @@ export default function Page() {
         return false;
       }
     },
-    [api, patchItem, store.name]
+    [patchItem, store.name]
   );
 
   const importItem = useCallback(
@@ -153,8 +165,9 @@ export default function Page() {
       }
       patchItem(item.type, item.id, { status: "working", error: "" });
       try {
-        const res = await api("/api/import", {
+        const res = await fetch("/api/import", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             type: item.type,
             id: item.id,
@@ -176,17 +189,14 @@ export default function Page() {
         return false;
       }
     },
-    [api, patchItem, showToast]
+    [patchItem, showToast]
   );
 
   const items = data[activeTab] || [];
 
   const fixIssues = useCallback(async () => {
     const list = items.filter((i) => auditItem(i).hasIssue && (i.status === "idle" || i.status === "error"));
-    if (!list.length) {
-      showToast("No SEO issues to fix on this tab.");
-      return;
-    }
+    if (!list.length) { showToast("No SEO issues to fix on this tab."); return; }
     setBusyAll(true);
     for (const it of list) await generate(it);
     setBusyAll(false);
@@ -195,10 +205,7 @@ export default function Page() {
 
   const generateAll = useCallback(async () => {
     const list = items.filter((i) => i.status === "idle" || i.status === "error");
-    if (!list.length) {
-      showToast("Nothing left to generate on this tab.");
-      return;
-    }
+    if (!list.length) { showToast("Nothing left to generate on this tab."); return; }
     setBusyAll(true);
     for (const it of list) await generate(it);
     setBusyAll(false);
@@ -207,10 +214,7 @@ export default function Page() {
 
   const importAll = useCallback(async () => {
     const list = items.filter((i) => i.status === "ready");
-    if (!list.length) {
-      showToast("No reviewed suggestions ready to import.");
-      return;
-    }
+    if (!list.length) { showToast("No reviewed suggestions ready to import."); return; }
     setBusyAll(true);
     let ok = 0;
     for (const it of list) if (await importItem(it)) ok++;
@@ -226,27 +230,27 @@ export default function Page() {
     return { ready, pending, issues, withIssues };
   }, [items]);
 
-  // ----- password gate -----
-  if (needPw) {
+  // ---- Connect screen ----
+  if (connected === false) {
     return (
       <>
-        <div className="topbar">
-          <div className="brand"><div className="logo"><Logo /></div></div>
-          <span className="navlabel">SEO Meta Studio</span>
-        </div>
+        <Topbar />
         <div className="gate">
-          <h2>Enter password</h2>
-          <p>This SEO tool is password protected.</p>
+          <span className="badge">Shopify SEO</span>
+          <h2>Connect your Shopify store</h2>
+          <p>Enter your store domain to securely connect with Shopify and start optimising your SEO meta.</p>
+          {authError && <div className="gate-error">⚠ {authError}</div>}
           <input
-            type="password"
-            value={pwInput}
-            placeholder="Password"
-            onChange={(e) => setPwInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { setPw(pwInput); } }}
+            type="text"
+            value={shopInput}
+            placeholder="your-store.myshopify.com"
+            onChange={(e) => setShopInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") connect(); }}
           />
-          <button className="btn primary" style={{ width: "100%" }} onClick={() => setPw(pwInput)}>
-            Unlock
+          <button className="btn primary" style={{ width: "100%" }} onClick={connect}>
+            Connect store ▸
           </button>
+          <p className="gate-hint">You&apos;ll be sent to Shopify to approve access, then brought right back.</p>
         </div>
       </>
     );
@@ -254,11 +258,7 @@ export default function Page() {
 
   return (
     <>
-      <div className="topbar">
-        <div className="brand"><div className="logo"><Logo /></div></div>
-        <span className="navlabel">SEO Meta Studio</span>
-      </div>
-
+      <Topbar />
       <div className="wrap">
         <div className="panel">
           <div className="intro">
@@ -274,8 +274,9 @@ export default function Page() {
               <div className="store-box">
                 <div className="store-chip">
                   <span className="dotg" style={{ background: store.name ? "#BFFC00" : "#9aa1ad" }} />
-                  {store.name ? <b>{store.name}</b> : "Not connected"}
+                  {store.name ? <b>{store.name}</b> : store.domain || "Connected"}
                 </div>
+                <a className="btn ghost sm" href="/api/auth/logout">⇄ Disconnect / switch store</a>
               </div>
             </div>
           </div>
@@ -435,26 +436,4 @@ function ItemCard({ item, onGenerate, onImport, onEdit }) {
         {item.status === "idle" && (
           <button className="btn primary sm" onClick={onGenerate}>{idleLabel}</button>
         )}
-        {item.status === "ready" && (
-          <>
-            <button className="btn dark sm" onClick={onImport}>Import ▸</button>
-            <button className="btn ghost sm" onClick={onGenerate}>↻ Regenerate</button>
-          </>
-        )}
-        {item.status === "imported" && (
-          <>
-            <button className="btn ghost sm" onClick={onGenerate}>↻ Regenerate</button>
-            <button className="btn dark sm" onClick={onImport}>Re-import ▸</button>
-          </>
-        )}
-        {item.status === "error" && (
-          <>
-            <button className="btn primary sm" onClick={onGenerate}>↻ Try again</button>
-            {item.genTitle && <button className="btn dark sm" onClick={onImport}>Import ▸</button>}
-          </>
-        )}
-        {item.status === "working" && <button className="btn sm" disabled>Working…</button>}
-      </div>
-    </div>
-  );
-}
+        {item.status === "ready" &&

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminGraphQL, storeDomain } from "@/lib/shopify";
-import { checkAuth } from "@/lib/auth";
+import { adminGraphQL } from "@/lib/shopify";
+import { getSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -44,11 +44,12 @@ function mkItem(type, node, opts) {
 }
 
 export async function GET(request) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = getSession(request);
+  if (!session) {
+    return NextResponse.json({ connected: false }, { status: 401 });
   }
   try {
-    const d = await adminGraphQL(LOAD_QUERY);
+    const d = await adminGraphQL(session.shop, session.token, LOAD_QUERY);
     const products = (d.products.edges || []).map((e) =>
       mkItem("products", e.node, { cur: e.node.seo, context: stripHtml(e.node.descriptionHtml) })
     );
@@ -82,13 +83,12 @@ export async function GET(request) {
     });
 
     return NextResponse.json({
-      store: { name: (d.shop && d.shop.name) || "", domain: storeDomain() },
+      connected: true,
+      store: { name: (d.shop && d.shop.name) || "", domain: session.shop },
       products,
       collections,
       pages,
       articles,
     });
   } catch (e) {
-    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
-  }
-}
+    return NextResponse
