@@ -91,4 +91,6 @@ export async function GET(request) {
       articles,
     });
   } catch (e) {
-    return NextResponse
+    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
+  }
+}
