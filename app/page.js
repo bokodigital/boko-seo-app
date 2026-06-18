@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 
 const TITLE_MIN = 50, TITLE_MAX = 60, DESC_MIN = 150, DESC_MAX = 160;
+const PAGE_SIZE = 10;
 
 const TABS = [
   { key: "products", label: "Products" },
@@ -63,6 +64,7 @@ export default function Page() {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [busyAll, setBusyAll] = useState(false);
+  const [page, setPage] = useState(1);
   const [shopInput, setShopInput] = useState("");
   const [authError, setAuthError] = useState("");
 
@@ -193,6 +195,9 @@ export default function Page() {
   );
 
   const items = data[activeTab] || [];
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const fixIssues = useCallback(async () => {
     const list = items.filter((i) => auditItem(i).hasIssue && (i.status === "idle" || i.status === "error"));
@@ -286,7 +291,7 @@ export default function Page() {
               <button
                 key={t.key}
                 className={"tab" + (t.key === activeTab ? " active" : "")}
-                onClick={() => setActiveTab(t.key)}
+                onClick={() => { setActiveTab(t.key); setPage(1); }}
               >
                 {t.label} <span className="count">{(data[t.key] || []).length}</span>
               </button>
@@ -346,7 +351,7 @@ export default function Page() {
           )}
 
           {!loading && !loadError &&
-            items.map((item) => (
+            pageItems.map((item) => (
               <ItemCard
                 key={item.id}
                 item={item}
@@ -355,6 +360,14 @@ export default function Page() {
                 onEdit={(field, value) => patchItem(item.type, item.id, { [field]: value })}
               />
             ))}
+
+          {!loading && !loadError && totalPages > 1 && (
+            <div className="pager">
+              <button className="btn ghost sm" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹ Prev</button>
+              <span className="pginfo">Page {safePage} of {totalPages} · {items.length} total</span>
+              <button className="btn ghost sm" disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)}>Next ›</button>
+            </div>
+          )}
 
           <div className="foot">
             Boko Digital · Strategize. Execute. Deliver. — meta written clear, concise, active voice.
