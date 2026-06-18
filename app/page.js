@@ -438,4 +438,24 @@ function ItemCard({ item, onGenerate, onImport, onEdit }) {
         )}
         {item.status === "ready" && (
           <>
-            <button className="btn dark
+            <button className="btn dark sm" onClick={onImport}>Import ▸</button>
+            <button className="btn ghost sm" onClick={onGenerate}>↻ Regenerate</button>
+          </>
+        )}
+        {item.status === "imported" && (
+          <>
+            <button className="btn ghost sm" onClick={onGenerate}>↻ Regenerate</button>
+            <button className="btn dark sm" onClick={onImport}>Re-import ▸</button>
+          </>
+        )}
+        {item.status === "error" && (
+          <>
+            <button className="btn primary sm" onClick={onGenerate}>↻ Try again</button>
+            {item.genTitle && <button className="btn dark sm" onClick={onImport}>Import ▸</button>}
+          </>
+        )}
+        {item.status === "working" && <button className="btn sm" disabled>Working…</button>}
+      </div>
+    </div>
+  );
+}
