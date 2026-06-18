@@ -69,9 +69,6 @@ function makeDesc(context, title, store, typeWord) {
 }
 
 export async function POST(request) {
-  if (!checkAuth(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
   let body;
   try {
     body = await request.json();
