@@ -362,7 +362,7 @@ export default function Page() {
         </div>
       </div>
 
-      {toast && <div className="toast" dangerouslySetInnerHTML={{ __html: toast.replace(/</g, "&lt;") }} />}
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }
@@ -436,4 +436,6 @@ function ItemCard({ item, onGenerate, onImport, onEdit }) {
         {item.status === "idle" && (
           <button className="btn primary sm" onClick={onGenerate}>{idleLabel}</button>
         )}
-        {item.status === "ready" &&
+        {item.status === "ready" && (
+          <>
+            <button className="btn dark
