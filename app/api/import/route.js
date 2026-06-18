@@ -56,4 +56,6 @@ export async function POST(request) {
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
-    return Nex
+    return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
+  }
+}
