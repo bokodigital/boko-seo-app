@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminGraphQL } from "@/lib/shopify";
 import { getSession } from "@/lib/session";
+import { applyGate } from "@/lib/gate";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -146,6 +147,10 @@ export async function GET(request) {
       })
     );
 
+    // Free-tier gate: first 100 items across ALL types are free; the rest are
+    // tagged `locked`. Order here decides which items land in the free 100.
+    const gate = applyGate([products, collections, pages, articles]);
+
     return NextResponse.json({
       connected: true,
       store: { name: (shopData.shop && shopData.shop.name) || "", domain: shop },
@@ -153,6 +158,7 @@ export async function GET(request) {
       collections,
       pages,
       articles,
+      gate,
     });
   } catch (e) {
     return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
