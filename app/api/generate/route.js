@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { FREE_LIMIT, upgradeUrl } from "@/lib/gate";
 
 export const dynamic = "force-dynamic";
 
@@ -187,7 +188,18 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { type, title, context, store } = body || {};
+  const { type, title, context, store, locked } = body || {};
+
+  // Free-tier gate: items beyond the free first-100 are locked.
+  if (locked) {
+    return NextResponse.json(
+      {
+        error: `Your free plan covers the first ${FREE_LIMIT} items. Upgrade with Boko to optimise the rest.`,
+        upgradeUrl: upgradeUrl(),
+      },
+      { status: 402 }
+    );
+  }
   const typeWord = TYPE_WORD[type] || "page";
   const input = { title: title || "", context: context || "", store: store || "", typeWord };
 
