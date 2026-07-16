@@ -47,6 +47,7 @@ git push -u origin main
    - `SHOPIFY_SCOPES` = `read_products,write_products,read_content,write_content`
    - `SHOPIFY_API_VERSION` = `2025-01`
    - `SESSION_SECRET` = a long random string (`openssl rand -hex 32`)
+   - `UPGRADE_URL` = *(optional)* where the free-tier **Upgrade** button links (defaults to `https://www.boko.com.au/upgrade`)
 3. **Deploy.** Note your URL, e.g. `https://boko-seo-app.vercel.app`.
 
 ## Step 4 — Point the Shopify app at your Vercel URL
@@ -94,3 +95,23 @@ Meta generation is rule-based and needs no API key.
 - One browser session = one connected store. Disconnecting clears the cookie.
 
 ## Tech
+---
+
+## Free tier & upgrades (100-item limit)
+
+The Studio is free for the **first 100 items across all content types combined**
+(pages, posts/articles, categories, products, product categories/collections).
+Once a connected site has **more than 100 items**, everything beyond the first 100
+is **locked**: those cards show an **Upgrade** button instead of Generate/Import,
+and "Generate all" / "Fix issues" / "Import all" only act on the free items.
+
+The limit is enforced both in the UI and on the server (`/api/generate` and
+`/api/import` return **HTTP 402** for locked items), so it can't be bypassed by
+the buttons alone.
+
+- **Where the count is decided:** `/api/items` tags each item `locked` in a fixed
+  order and returns a `gate` object (`{ total, freeLimit, locked, lockedCount, upgradeUrl }`).
+- **Change the free limit:** edit `FREE_LIMIT` in `lib/gate.js`.
+- **Where "Upgrade" links to:** set the optional env var **`UPGRADE_URL`**
+  (defaults to `https://www.boko.com.au/upgrade`). Point it at your Boko upgrade /
+  checkout / enquiry page.
