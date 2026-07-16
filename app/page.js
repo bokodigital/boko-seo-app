@@ -82,6 +82,7 @@ export default function Page() {
   const [busyAll, setBusyAll] = useState(false);
   const [page, setPage] = useState(1);
   const [queries, setQueries] = useState({}); // search text, kept per tab
+  const [gate, setGate] = useState(null); // free-tier gate metadata
   const [shopInput, setShopInput] = useState("");
   const [authError, setAuthError] = useState("");
 
@@ -112,6 +113,7 @@ export default function Page() {
         articles: decorate(d.articles),
       });
       setStore(d.store || { name: "", domain: "" });
+      setGate(d.gate || null);
       setConnected(true);
     } catch (e) {
       setConnected(true);
@@ -146,6 +148,7 @@ export default function Page() {
 
   const generate = useCallback(
     async (item) => {
+      if (item.locked) { showToast("Upgrade with Boko to optimise this item."); return false; }
       patchItem(item.type, item.id, { status: "working", error: "" });
       try {
         const res = await fetch("/api/generate", {
@@ -157,6 +160,7 @@ export default function Page() {
             handle: item.handle,
             context: item.context,
             store: store.name,
+            locked: item.locked,
           }),
         });
         const d = await res.json();
@@ -182,6 +186,10 @@ export default function Page() {
         showToast("Generate a suggestion first.");
         return false;
       }
+      if (item.locked) {
+        showToast("Upgrade with Boko to optimise this item.");
+        return false;
+      }
       patchItem(item.type, item.id, { status: "working", error: "" });
       try {
         const res = await fetch("/api/import", {
@@ -192,6 +200,7 @@ export default function Page() {
             id: item.id,
             metaTitle: item.genTitle,
             metaDescription: item.genDesc,
+            locked: item.locked,
           }),
         });
         const d = await res.json();
@@ -232,7 +241,7 @@ export default function Page() {
   const pageItems = items.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const fixIssues = useCallback(async () => {
-    const list = items.filter((i) => auditItem(i).hasIssue && (i.status === "idle" || i.status === "error"));
+    const list = items.filter((i) => !i.locked && auditItem(i).hasIssue && (i.status === "idle" || i.status === "error"));
     if (!list.length) { showToast("No SEO issues to fix on this tab."); return; }
     setBusyAll(true);
     for (const it of list) await generate(it);
@@ -241,7 +250,7 @@ export default function Page() {
   }, [items, generate, showToast]);
 
   const generateAll = useCallback(async () => {
-    const list = items.filter((i) => i.status === "idle" || i.status === "error");
+    const list = items.filter((i) => !i.locked && (i.status === "idle" || i.status === "error"));
     if (!list.length) { showToast("Nothing left to generate on this tab."); return; }
     setBusyAll(true);
     for (const it of list) await generate(it);
@@ -250,7 +259,7 @@ export default function Page() {
   }, [items, generate, showToast]);
 
   const importAll = useCallback(async () => {
-    const list = items.filter((i) => i.status === "ready");
+    const list = items.filter((i) => !i.locked && i.status === "ready");
     if (!list.length) { showToast("No reviewed suggestions ready to import."); return; }
     setBusyAll(true);
     let ok = 0;
@@ -331,6 +340,16 @@ export default function Page() {
               </button>
             ))}
           </div>
+
+          {gate && gate.locked && (
+            <div className="upgrade-banner">
+              <div className="upgrade-copy">
+                <b>You&apos;re on the free plan.</b> The first {gate.freeLimit} items are free to optimise.{" "}
+                {gate.lockedCount} more {gate.lockedCount === 1 ? "item is" : "items are"} locked across your store.
+              </div>
+              <a className="btn primary sm" href={gate.upgradeUrl} target="_blank" rel="noopener noreferrer">Upgrade with Boko ▸</a>
+            </div>
+          )}
 
           {!loading && !loadError && allItems.length > 0 && (
             <div className="searchbar">
@@ -424,6 +443,7 @@ export default function Page() {
               <ItemCard
                 key={item.id}
                 item={item}
+                upgradeUrl={gate ? gate.upgradeUrl : "https://www.boko.com.au/upgrade"}
                 onGenerate={() => generate(item)}
                 onImport={() => importItem(item)}
                 onEdit={(field, value) => patchItem(item.type, item.id, { [field]: value })}
@@ -449,7 +469,7 @@ export default function Page() {
   );
 }
 
-function ItemCard({ item, onGenerate, onImport, onEdit }) {
+function ItemCard({ item, onGenerate, onImport, onEdit, upgradeUrl }) {
   const a = auditItem(item);
   const tLen = (item.genTitle || "").length;
   const dLen = (item.genDesc || "").length;
@@ -473,6 +493,25 @@ function ItemCard({ item, onGenerate, onImport, onEdit }) {
       {o.state === "ok" ? "✓" : "⚠"} {o.msg}
     </span>
   );
+
+  if (item.locked) {
+    return (
+      <div className="card locked">
+        <div className="card-head">
+          <div>
+            <p className="card-title">{item.title}</p>
+            <div className="card-handle">/{item.handle}{item.blogTitle ? ` · ${item.blogTitle}` : ""}</div>
+          </div>
+          <span className="status-pill st-locked">🔒 Locked</span>
+        </div>
+        <div className="audit">{chip(a.title)}{chip(a.desc)}</div>
+        <div className="lock-note">On the free plan only your first 100 items can be optimised. Upgrade with Boko to unlock this one.</div>
+        <div className="card-actions">
+          <a className="btn primary sm" href={upgradeUrl} target="_blank" rel="noopener noreferrer">🔒 Upgrade to optimise</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={"card" + (item.status === "imported" ? " imported" : "")}>
