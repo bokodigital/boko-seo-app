@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { adminGraphQL } from "@/lib/shopify";
 import { getSession } from "@/lib/session";
 import { applyGate } from "@/lib/gate";
+import { verifyLicense } from "@/lib/license";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -147,9 +148,11 @@ export async function GET(request) {
       })
     );
 
-    // Free-tier gate: first 100 items across ALL types are free; the rest are
-    // tagged `locked`. Order here decides which items land in the free 100.
-    const gate = applyGate([products, collections, pages, articles]);
+    // Paid members (valid licence for this store) get everything unlocked;
+    // otherwise the first FREE_LIMIT items across ALL types are free and the
+    // rest are tagged `locked`. Order here decides which land in the free tier.
+    const member = verifyLicense(session.license, shop);
+    const gate = applyGate([products, collections, pages, articles], { member });
 
     return NextResponse.json({
       connected: true,
