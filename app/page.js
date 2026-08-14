@@ -38,7 +38,10 @@ function Topbar() {
   return (
     <div className="topbar">
       <div className="brand"><div className="logo"><Logo /></div></div>
-      <span className="navlabel">SEO Meta Studio</span>
+      <div className="topbar-right">
+        <AccountBar />
+        <span className="navlabel">SEO Meta Studio</span>
+      </div>
     </div>
   );
 }
@@ -347,7 +350,6 @@ export default function Page() {
                 </p>
               </div>
               <div className="store-box">
-                <AccountBar />
                 <div className="store-chip">
                   <span className="dotg" style={{ background: store.name ? "#BFFC00" : "#9aa1ad" }} />
                   {store.name ? <b>{store.name}</b> : store.domain || "Connected"}
