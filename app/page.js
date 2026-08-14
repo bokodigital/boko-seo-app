@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback, useDeferredValue } from "react";
 
 import AltTagsPanel from "./AltTagsPanel";
+import AccountBar from "./AccountBar";
 
 const TITLE_MIN = 50, TITLE_MAX = 60, DESC_MIN = 150, DESC_MAX = 160;
 const PAGE_SIZE = 10;
@@ -346,6 +347,7 @@ export default function Page() {
                 </p>
               </div>
               <div className="store-box">
+                <AccountBar />
                 <div className="store-chip">
                   <span className="dotg" style={{ background: store.name ? "#BFFC00" : "#9aa1ad" }} />
                   {store.name ? <b>{store.name}</b> : store.domain || "Connected"}
@@ -379,7 +381,7 @@ export default function Page() {
           {!isAltTab && (
             <>
             {gate && gate.member && (
-              <div className="member-banner">✓ Membership active — all {gate.total} items are unlocked.</div>
+              <div className="member-banner">✓ {gate.planLabel && gate.planLabel !== "Free" ? gate.planLabel + " plan" : "Membership"} active — all {gate.total} items are unlocked.</div>
             )}
 
             {gate && gate.locked && (
