@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { adminGraphQL } from "@/lib/shopify";
 import { getSession } from "@/lib/session";
 import { applyGate } from "@/lib/gate";
-import { verifyLicense } from "@/lib/license";
 import { entitlementFromToken } from "@/lib/entitlement";
 import { getAccountSession } from "@/lib/account-session";
 
@@ -150,13 +149,12 @@ export async function GET(request) {
       })
     );
 
-    // Paid members (valid licence for this store) get everything unlocked;
+    // Paid members get everything unlocked;
     // otherwise the first FREE_LIMIT items across ALL types are free and the
     // rest are tagged `locked`. Order here decides which land in the free tier.
     const account = getAccountSession(request);
     const entitlement = entitlementFromToken(account && account.bokoToken);
-    const member = verifyLicense(session.license, shop);
-    const gate = applyGate([products, collections, pages, articles], { member, entitlement });
+    const gate = applyGate([products, collections, pages, articles], { entitlement });
 
     return NextResponse.json({
       connected: true,
