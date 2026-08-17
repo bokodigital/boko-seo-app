@@ -47,7 +47,7 @@ git push -u origin main
    - `SHOPIFY_SCOPES` = `read_products,write_products,read_content,write_content`
    - `SHOPIFY_API_VERSION` = `2025-01`
    - `SESSION_SECRET` = a long random string (`openssl rand -hex 32`)
-   - `UPGRADE_URL` = *(optional)* where the free-tier **Upgrade** button links (defaults to `https://www.boko.com.au/upgrade`)
+   - `UPGRADE_URL` = *(optional)* where the free-tier **Upgrade** button links (defaults to `https://boko.com.au/ai-tools/seo-meta-studio-by-boko/`)
 3. **Deploy.** Note your URL, e.g. `https://boko-seo-app.vercel.app`.
 
 ## Step 4 — Point the Shopify app at your Vercel URL
@@ -97,6 +97,34 @@ Meta generation is rule-based and needs no API key.
 ## Tech
 ---
 
+## Image alt tags
+
+The **Alt tags** tab scans the store for images that have **no alt text** and writes one for each.
+
+- **What's scanned:** product images (all media on a product), collection images, and blog post
+  featured images. Shopify pages have no image field in the Admin API, so they're not included.
+- **How alt text is written:** free, rule-based — no AI key, no per-image cost. It combines the
+  product/collection/article title with anything meaningful in the filename, and falls back to a
+  positional descriptor ("– alternate view", "– side view") for second and third images. Junk
+  filenames (`IMG_4821.JPG`, `DSC_0001`, hashes, dimensions, `@2x`) are ignored rather than repeated
+  back at the reader. Alt text is capped at 125 characters.
+- **When it can't guess:** if there's nothing usable in the title or the filename, the card is
+  flagged *"please describe this image yourself"* and left blank rather than saving filler.
+- **Review before saving:** every suggestion is editable. Save one at a time, or **Save all
+  suggestions** for everything visible on the tab.
+- **Big catalogues:** the scan is paced against Shopify's GraphQL cost limits and runs in batches.
+  If the store is large you'll see a **Scan more images** button to pull the next batch.
+
+Alt text is written back with `productUpdateMedia`, `collectionUpdate` and `articleUpdate` — all
+covered by the existing `write_products` / `write_content` scopes, so **no re-authorisation is
+needed** for stores already connected.
+
+> If you bump `SHOPIFY_API_VERSION` past `2025-04`, `productUpdateMedia` is removed from the schema.
+> The app automatically falls back to `fileUpdate`, which needs `write_files` added to
+> `SHOPIFY_SCOPES` (and merchants to reconnect).
+
+---
+
 ## Free tier & upgrades (10-item limit)
 
 The Studio is free for the **first 10 items across all content types combined**
@@ -105,46 +133,21 @@ Once a connected site has **more than 10 items**, everything beyond the first 10
 is **locked**: those cards show an **Upgrade** button instead of Generate/Import,
 and "Generate all" / "Fix issues" / "Import all" only act on the free items.
 
-The limit is enforced both in the UI and on the server (`/api/generate` and
-`/api/import` return **HTTP 402** for locked items), so it can't be bypassed by
-the buttons alone.
+The limit is enforced both in the UI and on the server (`/api/generate`,
+`/api/import` and `/api/alt` return **HTTP 402** for locked items), so it can't be
+bypassed by the buttons alone.
 
-- **Where the count is decided:** `/api/items` tags each item `locked` in a fixed
-  order and returns a `gate` object (`{ total, freeLimit, locked, lockedCount, upgradeUrl }`).
+Image alt tags have their **own separate allowance of 10 images** — a store has far
+more images than pages, so counting them in the same pool would exhaust the free
+tier instantly. `/api/images` carries the running count across "Scan more" batches
+via the `loaded` query param, so the allowance isn't handed out again per batch.
+
+- **Where the count is decided:** `/api/items` (meta) and `/api/images` (alt tags)
+  tag each item `locked` in a fixed order and return a `gate` object
+  (`{ total, freeLimit, locked, lockedCount, upgradeUrl }`).
 - **Change the free limit:** edit `FREE_LIMIT` in `lib/gate.js`.
 - **Where "Upgrade" links to:** set the optional env var **`UPGRADE_URL`**
-  (defaults to `https://www.boko.com.au/upgrade`). Point it at your Boko upgrade /
+  (defaults to `https://boko.com.au/ai-tools/seo-meta-studio-by-boko/`). Point it at your Boko upgrade /
   checkout / enquiry page.
 ---
 
-## Membership (one-time unlock via licence key)
-
-Paid customers unlock the full item set with a **licence key** — no database and no
-login. A key is an HMAC signature bound to the customer's connected domain, so a key
-issued for one site/store can't be reused on another.
-
-**Setup (once):**
-
-- Set a strong `LICENSE_SECRET` env var on this app's Vercel deployment
-  (`openssl rand -hex 32`). Keep it private. If it's unset, no key can ever validate
-  (the gate stays closed).
-
-**Issuing a key (after a customer's one-time Stripe purchase):**
-
-```bash
-LICENSE_SECRET=<same value as Vercel> node tools/generate-license.mjs <their-domain>
-# e.g. node tools/generate-license.mjs their-store.myshopify.com
-```
-
-Give the printed key to the customer.
-
-**Customer redeems it:** in the app, once they're over the free limit, they paste the
-key into the **"Already purchased? Paste licence key"** box and click **Unlock**. The
-server (`/api/license`) verifies it against the domain they're actually connected to,
-stores it in their encrypted session, and every item unlocks. The check is re-run on
-each request (`/api/items`), so it can't be faked by editing the page.
-**Internal team unlock (Boko):** set `INTERNAL_UNLOCK_KEY` on Vercel to any strong
-shared secret. Anyone who pastes that exact value into the licence box unlocks the
-app on **any** connected site/store — no per-domain key needed. Use it for internal
-work across client sites; keep it private and rotate it if it leaks. Leave it unset
-to disable internal unlock entirely.
