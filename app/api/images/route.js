@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { adminGraphQLWithCost, awaitThrottle } from "@/lib/shopify";
 import { getSession } from "@/lib/session";
 import { applyGate } from "@/lib/gate";
-import { entitlementFromToken } from "@/lib/entitlement";
-import { getAccountSession } from "@/lib/account-session";
+import { gateContext } from "@/lib/sites";
+import { persistGate } from "@/lib/account-session";
 import { suggestAlt } from "@/lib/alt-text";
 
 export const dynamic = "force-dynamic";
@@ -246,17 +246,17 @@ export async function GET(request) {
       if (Date.now() - started > TIME_BUDGET_MS) break;
     }
 
-    const account = getAccountSession(request);
-    const entitlement = entitlementFromToken(account && account.bokoToken);
-    const gate = applyGate([images], { entitlement, startAt: alreadyLoaded });
+    const ctx = await gateContext(request, session);
+    const gate = applyGate([images], { site: ctx, startAt: alreadyLoaded });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       connected: true,
       images,
       scannedProducts,
       nextCursor: hasNextPage ? after : null,
       gate,
     });
+    return persistGate(res, ctx);
   } catch (e) {
     return NextResponse.json({ error: e.message || String(e) }, { status: 500 });
   }
