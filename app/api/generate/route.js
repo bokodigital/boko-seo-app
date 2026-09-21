@@ -161,6 +161,29 @@ async function callGemini(model, key, payload) {
   }
 }
 
+// The Flash models this key can call, newest stable first. Only consulted
+// when none of the named models answered, so it costs nothing normally.
+// (By Sept 2026 the 2.5 models were retired and the "latest" alias was
+// returning 503 — this is what keeps AI on through that kind of churn.)
+async function discoverFlashModels(key) {
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=${key}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    const names = (d.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map((m) => String(m.name || "").replace(/^models\//, ""))
+      .filter((n) => /flash/i.test(n) && !/image|tts|audio|live|thinking|embedding/i.test(n));
+    const version = (n) => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [])[1] || "0");
+    const unstable = (n) => (/preview|exp/i.test(n) ? 1 : 0);
+    const lite = (n) => (/lite/i.test(n) ? 1 : 0);
+    names.sort((a, b) => unstable(a) - unstable(b) || version(b) - version(a) || lite(a) - lite(b));
+    return names.slice(0, 3);
+  } catch (e) {
+    return [];
+  }
+}
+
 async function aiGenerate(input) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
@@ -185,25 +208,45 @@ async function aiGenerate(input) {
   // Move on to the next model when this one is missing (404), rate-limited
   // (429), overloaded (5xx) or too slow. A bad key (400/403) fails the same way
   // on every model, so that stops straight away.
+  const trace = [];
   let res = null;
   let lastErr = null;
-  for (const model of modelsToTry()) {
+  const attempt = async (model) => {
     try {
       res = await callGemini(model, key, payload);
+      trace.push(`${model}:${res.status}`);
     } catch (e) {
       lastErr = e;
       res = null;
-      console.error(`Gemini model "${model}" timed out, trying the next one`);
-      continue;
+      trace.push(`${model}:timeout`);
+      return false;
     }
-    if (res.ok || !(res.status === 404 || res.status === 429 || res.status >= 500)) break;
-    console.error(`Gemini model "${model}" returned ${res.status}, trying the next one`);
-  }
-  if (!res) throw lastErr || new Error("Gemini unreachable");
+    return res.ok || !(res.status === 404 || res.status === 429 || res.status >= 500);
+  };
 
+  let done = false;
+  for (const model of modelsToTry()) {
+    if ((done = await attempt(model))) break;
+  }
+  // Nothing answered (retired names, an overloaded alias): ask Google which
+  // Flash models this key can use right now and try those.
+  if (!done && !trace.some((t) => /:(400|401|403)$/.test(t))) {
+    for (const model of await discoverFlashModels(key)) {
+      if (trace.some((t) => t.startsWith(model + ":"))) continue;
+      if ((done = await attempt(model))) break;
+    }
+  }
+  if (!done) console.error("Gemini attempts:", trace.join(", "));
+  if (!res) {
+    const e = lastErr || new Error("Gemini unreachable");
+    e.trace = trace;
+    throw e;
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`Gemini ${res.status} ${detail.slice(0, 200)}`);
+    const e = new Error(`Gemini ${res.status} ${detail.slice(0, 200)}`);
+    e.trace = trace;
+    throw e;
   }
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -265,6 +308,7 @@ export async function POST(request) {
     const m = msg.match(/^Gemini (\d{3})/);
     const reason = (msg.match(/"status":\s*"([A-Z_]+)"/) || [])[1] || "";
     aiStatus = m ? `http-${m[1]}${reason ? " " + reason : ""}` : e && e.name === "AbortError" ? "timeout" : "error";
+    if (e && Array.isArray(e.trace) && e.trace.length) aiStatus += ` [${e.trace.join(", ")}]`;
   }
 
   return NextResponse.json({ ...ruleBased(input), aiStatus });
